@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/pnpm-lock.yaml"]
+    "includes": ["**", "!**/pnpm-lock.yaml", "!**/*.svg"]
   },
   "formatter": {
     "enabled": true,
@@ -18,7 +18,13 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "suspicious": {
+        "noUnknownAtRules": {
+          "level": "error",
+          "options": { "ignore": ["tailwind"] }
+        }
+      }
     }
   },
   "javascript": {

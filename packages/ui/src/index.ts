@@ -13,4 +13,3 @@ export {
   useNotesList,
 } from './notes';
 export { TextField, type TextFieldProps } from './TextField';
-export { HelloCairn } from './HelloCairn';

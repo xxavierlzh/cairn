@@ -60,15 +60,15 @@ Open http://localhost:3000, create an account and write a note. Sign in with the
 
 ## Commands
 
-| Command          | What it does                                    |
-| ---------------- | ----------------------------------------------- |
-| `pnpm dev`       | Runs the API and web app in watch mode          |
-| `pnpm mobile`    | Starts the Expo dev server                      |
-| `pnpm test`      | Unit tests (core) and API integration tests     |
-| `pnpm build`     | Production builds via Turborepo                 |
-| `pnpm typecheck` | `tsc` across all packages                       |
-| `pnpm lint`      | Biome lint + format check                       |
-| `pnpm format`    | Biome autofix                                   |
+| Command          | What it does                                |
+| ---------------- | ------------------------------------------- |
+| `pnpm dev`       | Runs the API and web app in watch mode      |
+| `pnpm mobile`    | Starts the Expo dev server                  |
+| `pnpm test`      | Unit tests (core) and API integration tests |
+| `pnpm build`     | Production builds via Turborepo             |
+| `pnpm typecheck` | `tsc` across all packages                   |
+| `pnpm lint`      | Biome lint + format check                   |
+| `pnpm format`    | Biome autofix                               |
 
 API tests start a throwaway in-memory MongoDB, so they don't need Docker. The first run downloads a MongoDB binary (a few hundred MB), so it can take a few minutes.
 
@@ -76,16 +76,16 @@ API tests start a throwaway in-memory MongoDB, so they don't need Docker. The fi
 
 All `/api/notes` routes need a signed-in session and only ever see the caller's own notes. Another user's note returns `404`, never `403`, so ids can't be probed.
 
-| Method   | Path                                 | Body / query                        |
-| -------- | ------------------------------------ | ----------------------------------- |
-| `POST`   | `/api/auth/sign-up/email`            | `{ name, email, password }`         |
-| `POST`   | `/api/auth/sign-in/email`            | `{ email, password }`               |
-| `GET`    | `/api/notes`                         | `?limit=20&cursor=...` (newest first) |
-| `POST`   | `/api/notes`                         | `{ title?, markdown? }`             |
-| `GET`    | `/api/notes/:id`                     |                                     |
-| `PATCH`  | `/api/notes/:id`                     | `{ title?, markdown? }`             |
-| `DELETE` | `/api/notes/:id`                     |                                     |
-| `GET`    | `/api/health`                        |                                     |
+| Method   | Path                      | Body / query                          |
+| -------- | ------------------------- | ------------------------------------- |
+| `POST`   | `/api/auth/sign-up/email` | `{ name, email, password }`           |
+| `POST`   | `/api/auth/sign-in/email` | `{ email, password }`                 |
+| `GET`    | `/api/notes`              | `?limit=20&cursor=...` (newest first) |
+| `POST`   | `/api/notes`              | `{ title?, markdown? }`               |
+| `GET`    | `/api/notes/:id`          |                                       |
+| `PATCH`  | `/api/notes/:id`          | `{ title?, markdown? }`               |
+| `DELETE` | `/api/notes/:id`          |                                       |
+| `GET`    | `/api/health`             |                                       |
 
 Request bodies are validated with the zod schemas in `packages/core`, the same ones the apps use. Titles can't contain characters Obsidian rejects in filenames or links (`\ / : * ? " < > | # ^ [ ]`), so every note can be exported later.
 

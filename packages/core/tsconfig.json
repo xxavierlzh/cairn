@@ -1,4 +1,6 @@
 {
   "extends": "@cairn/typescript-config/base.json",
+  // DOM for the `fetch` types used by the API client (fetch exists in browsers, React Native and Node).
+  "compilerOptions": { "lib": ["ES2022", "DOM"] },
   "include": ["src"]
 }

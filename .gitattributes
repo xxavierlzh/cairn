@@ -1,0 +1,7 @@
+# Normalise line endings to LF in the repo and working tree (avoids CRLF churn on Windows)
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.ttf binary

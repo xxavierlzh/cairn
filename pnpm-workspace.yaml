@@ -1,0 +1,20 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Flat, npm-style node_modules. React Native tooling (Metro, NativeWind's css-interop)
+# breaks in subtle ways when the same package gets installed twice under pnpm's default
+# isolated layout, so we trade some strictness for one copy of everything.
+nodeLinker: hoisted
+
+# Shared versions: reference these with "catalog:" in any package.json so web, mobile
+# and packages can never drift apart. react/react-native must match Expo SDK 58.
+catalog:
+  "@types/react": ~19.3.0
+  nativewind: 4.2.7
+  react: 19.3.0
+  react-dom: 19.3.0
+  react-native: 0.88.0
+  react-native-web: ~0.21.4
+  tailwindcss: ^3.4.19
+  typescript: ~6.0.3

@@ -22,7 +22,9 @@
       "suspicious": {
         "noUnknownAtRules": {
           "level": "error",
-          "options": { "ignore": ["tailwind"] }
+          "options": {
+            "ignore": ["tailwind"]
+          }
         }
       }
     }
@@ -39,5 +41,15 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/typescript-config/*.json"],
+      "json": {
+        "parser": {
+          "allowComments": true
+        }
+      }
+    }
+  ]
 }

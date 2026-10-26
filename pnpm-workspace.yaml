@@ -9,9 +9,14 @@ nodeLinker: hoisted
 
 # Shared versions: reference these with "catalog:" in any package.json so web, mobile
 # and packages can never drift apart. react/react-native must match Expo SDK 58.
+# Better Auth packages are pinned exactly: server and clients must run the same version.
 catalog:
+  "@better-auth/expo": 1.7.12
+  "@tanstack/react-query": ^5.104.5
+  "@types/node": ^22.20.5
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
+  better-auth: 1.7.12
   nativewind: 4.2.7
   react: 19.3.0
   react-dom: 19.3.0
@@ -19,3 +24,13 @@ catalog:
   react-native-web: ~0.21.4
   tailwindcss: ^3.4.19
   typescript: ~6.0.3
+  vite: ^8.3.5
+  vitest: ^5.0.5
+  zod: ^4.6.7
+
+# pnpm only runs a dependency's install script if it's listed here (supply-chain safety).
+allowBuilds:
+  # Checks its platform binary, which tsx and Vitest use to compile TypeScript.
+  esbuild: true
+  # Would download MongoDB (~100 MB) at install time. Skipped: it downloads on first test run.
+  mongodb-memory-server: false

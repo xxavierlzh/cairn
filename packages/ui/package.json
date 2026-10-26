@@ -13,12 +13,14 @@
     "@cairn/core": "workspace:*"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
     "nativewind": "^4.2.0",
     "react": ">=19",
     "react-native": ">=0.80"
   },
   "devDependencies": {
     "@cairn/typescript-config": "workspace:*",
+    "@tanstack/react-query": "catalog:",
     "@types/react": "catalog:",
     "nativewind": "catalog:",
     "react": "catalog:",

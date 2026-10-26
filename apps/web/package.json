@@ -1,0 +1,30 @@
+{
+  "name": "@cairn/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack --port 3000",
+    "build": "next build --webpack",
+    "start": "next start --port 3000",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@cairn/core": "workspace:*",
+    "@cairn/ui": "workspace:*",
+    "nativewind": "catalog:",
+    "next": "^16.4.3",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-native-web": "catalog:"
+  },
+  "devDependencies": {
+    "@cairn/typescript-config": "workspace:*",
+    "@types/node": "^22.20.5",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "postcss": "^8.5.6",
+    "react-native": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
+  }
+}

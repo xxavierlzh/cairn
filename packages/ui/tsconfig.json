@@ -1,0 +1,4 @@
+{
+  "extends": "@cairn/typescript-config/react-native-library.json",
+  "include": ["src", "nativewind-env.d.ts"]
+}

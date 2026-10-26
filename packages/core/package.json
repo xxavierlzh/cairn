@@ -1,0 +1,16 @@
+{
+  "name": "@cairn/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cairn/typescript-config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

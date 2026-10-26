@@ -6,5 +6,6 @@ module.exports = {
   // react-native-web injects its own reset classes (e.g. `border-width: 0` on every View).
   // Scoping utilities under `html` gives them higher specificity so Tailwind always wins.
   important: 'html',
-  plugins: [],
+  // `prose` classes style the rendered Markdown preview.
+  plugins: [require('@tailwindcss/typography')],
 };

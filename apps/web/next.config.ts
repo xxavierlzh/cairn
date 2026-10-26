@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
     'react-native-css-interop',
     'react-native-web',
   ],
+  // The browser only talks to this Next.js server, which forwards /api/* to the API server.
+  // Same origin means the auth cookie just works, with no CORS to configure.
+  async rewrites() {
+    const apiUrl = process.env.API_URL ?? 'http://localhost:4000';
+    return [{ source: '/api/:path*', destination: `${apiUrl}/api/:path*` }];
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

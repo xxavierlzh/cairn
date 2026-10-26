@@ -1,9 +1,6 @@
-import { HelloCairn } from '@cairn/ui';
+import { redirect } from 'next/navigation';
 
+// /notes checks the session and sends signed-out visitors to /sign-in.
 export default function HomePage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <HelloCairn />
-    </main>
-  );
+  redirect('/notes');
 }

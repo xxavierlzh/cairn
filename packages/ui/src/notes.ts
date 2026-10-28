@@ -15,7 +15,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from './api-context';
 
 export const noteKeys = {
@@ -94,16 +94,16 @@ export function useFollowLink(
   resolve: (title: string) => string | null,
   open: (id: string) => void,
 ) {
-  const createNote = useCreateNote();
-  return {
-    follow(title: string) {
+  const { mutate: create, isPending, error } = useCreateNote();
+  const follow = useCallback(
+    (title: string) => {
       const id = resolve(title);
       if (id) open(id);
-      else createNote.mutate({ title }, { onSuccess: (note) => open(note.id) });
+      else create({ title }, { onSuccess: (note) => open(note.id) });
     },
-    isCreating: createNote.isPending,
-    error: createNote.error,
-  };
+    [resolve, open, create],
+  );
+  return { follow, isCreating: isPending, error };
 }
 
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
@@ -209,6 +209,11 @@ export function useNoteEditor(id: string) {
     }
     return ids;
   }, [savedLinks]);
+  // Stable until the links change, so previews only re-render when a link resolves.
+  const resolveLink = useCallback(
+    (title: string) => linkIds.get(noteTitleKey(title)) ?? null,
+    [linkIds],
+  );
 
   // Leaving the screen mid-debounce would drop the last edit, so send it now.
   useEffect(
@@ -240,7 +245,7 @@ export function useNoteEditor(id: string) {
     status,
     titleError,
     /** The id of the note a [[link]] points to, or `null` if it doesn't exist (yet). */
-    resolveLink: (title: string) => linkIds.get(noteTitleKey(title)) ?? null,
+    resolveLink,
     setTitle: (title: string) => edit({ title }),
     setMarkdown: (markdown: string) => edit({ markdown }),
     deleteNote: async () => {

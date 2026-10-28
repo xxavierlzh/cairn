@@ -9,8 +9,8 @@ import {
 } from './notes';
 
 describe('createNoteInputSchema', () => {
-  it('fills in defaults for an empty body', () => {
-    expect(createNoteInputSchema.parse({})).toEqual({ title: 'Untitled', markdown: '' });
+  it('defaults the body and leaves the title for the server to pick', () => {
+    expect(createNoteInputSchema.parse({})).toEqual({ markdown: '' });
   });
 
   it('trims the title', () => {
@@ -23,6 +23,18 @@ describe('createNoteInputSchema', () => {
       expect(createNoteInputSchema.safeParse({ title }).success).toBe(false);
     },
   );
+
+  it.each(['CON', 'nul', 'com1', 'LPT9', 'aux.txt', '.hidden', 'Trailing.'])(
+    "rejects names Windows or Obsidian can't use as files: %s",
+    (title) => {
+      expect(createNoteInputSchema.safeParse({ title }).success).toBe(false);
+    },
+  );
+
+  it('allows titles that only start like a reserved name', () => {
+    expect(createNoteInputSchema.safeParse({ title: 'Con Air' }).success).toBe(true);
+    expect(createNoteInputSchema.safeParse({ title: 'v1.0 notes' }).success).toBe(true);
+  });
 
   it('rejects titles that are blank or too long', () => {
     expect(createNoteInputSchema.safeParse({ title: '   ' }).success).toBe(false);
@@ -47,6 +59,11 @@ describe('listNotesQuerySchema', () => {
     expect(listNotesQuerySchema.parse({ limit: '5' }).limit).toBe(5);
     expect(listNotesQuerySchema.parse({}).limit).toBe(20);
     expect(listNotesQuerySchema.safeParse({ limit: '1000' }).success).toBe(false);
+  });
+
+  it('normalizes the tag filter', () => {
+    expect(listNotesQuerySchema.parse({ tag: ' Project/Cairn ' }).tag).toBe('project/cairn');
+    expect(listNotesQuerySchema.safeParse({ tag: '' }).success).toBe(false);
   });
 });
 

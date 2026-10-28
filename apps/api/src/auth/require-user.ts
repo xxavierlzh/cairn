@@ -1,5 +1,5 @@
 import { fromNodeHeaders } from 'better-auth/node';
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Auth } from './auth';
 
 declare module 'fastify' {
@@ -21,4 +21,10 @@ export function createRequireUser(auth: Auth) {
     }
     request.userId = session.user.id;
   };
+}
+
+/** Call at the top of a route plugin: every route in it then needs a signed-in user. */
+export function protectRoutes(app: FastifyInstance, auth: Auth): void {
+  app.decorateRequest('userId', '');
+  app.addHook('preHandler', createRequireUser(auth));
 }

@@ -1,4 +1,11 @@
-import type { CreateNoteInput, Note, NotesPage, UpdateNoteInput } from './notes';
+import type {
+  BacklinksResponse,
+  CreateNoteInput,
+  Note,
+  NotesPage,
+  TagsResponse,
+  UpdateNoteInput,
+} from './notes';
 
 export class ApiError extends Error {
   constructor(
@@ -21,6 +28,12 @@ export interface ApiClientOptions {
   getHeaders?: () => Record<string, string> | Promise<Record<string, string>>;
   /** `fetch` credentials mode. Mobile sets the cookie itself, so it passes `'omit'`. */
   credentials?: 'omit' | 'same-origin' | 'include';
+}
+
+export interface ListNotesOptions {
+  cursor?: string | null;
+  limit?: number;
+  tag?: string;
 }
 
 /** Typed wrapper around the Cairn REST API. Works anywhere `fetch` exists. */
@@ -54,18 +67,25 @@ export function createApiClient({
 
   return {
     notes: {
-      list: ({ cursor, limit }: { cursor?: string | null; limit?: number } = {}) => {
+      list: ({ cursor, limit, tag }: ListNotesOptions = {}) => {
         const query = new URLSearchParams();
         if (cursor) query.set('cursor', cursor);
         if (limit) query.set('limit', String(limit));
+        if (tag) query.set('tag', tag);
         const qs = query.toString();
         return request<NotesPage>('GET', `/notes${qs ? `?${qs}` : ''}`);
       },
       get: (id: string) => request<Note>('GET', `/notes/${id}`),
+      backlinks: (id: string) => request<BacklinksResponse>('GET', `/notes/${id}/backlinks`),
       create: (input: CreateNoteInput = {}) => request<Note>('POST', '/notes', input),
       update: (id: string, input: UpdateNoteInput) => request<Note>('PATCH', `/notes/${id}`, input),
       remove: (id: string) => request<void>('DELETE', `/notes/${id}`),
     },
+    tags: {
+      list: () => request<TagsResponse>('GET', '/tags'),
+    },
+    /** Downloads every note as an Obsidian vault (.zip). Needs the session cookie. */
+    exportUrl: `${baseUrl}/api/export`,
   };
 }
 

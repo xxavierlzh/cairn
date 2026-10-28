@@ -1,21 +1,24 @@
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyError } from 'fastify';
-import type { Db } from 'mongodb';
+import type { Db, MongoClient } from 'mongodb';
 import { ZodError } from 'zod';
 import type { Auth } from './auth/auth';
 import { authRoutes } from './auth/routes';
 import type { Env } from './env';
 import { noteRoutes } from './notes/routes';
+import { tagRoutes } from './tags/routes';
 
 export interface AppDeps {
   env: Env;
   db: Db;
+  /** For transactions (renaming a note rewrites links in other notes). */
+  client: MongoClient;
   auth: Auth;
 }
 
 /** Builds the Fastify app without starting it, so tests can call `app.inject()`. */
-export async function buildApp({ env, db, auth }: AppDeps) {
+export async function buildApp({ env, db, client, auth }: AppDeps) {
   const app = Fastify({
     logger: env.NODE_ENV === 'test' ? false : { level: 'info' },
     trustProxy: env.TRUST_PROXY,
@@ -48,7 +51,8 @@ export async function buildApp({ env, db, auth }: AppDeps) {
 
   app.get('/api/health', async () => ({ ok: true }));
   await app.register(authRoutes, { auth });
-  await app.register(noteRoutes, { db, auth, prefix: '/api/notes' });
+  await app.register(noteRoutes, { db, client, auth, prefix: '/api/notes' });
+  await app.register(tagRoutes, { db, auth, prefix: '/api/tags' });
 
   return app;
 }

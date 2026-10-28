@@ -1,34 +1,61 @@
 import {
+  type BacklinksResponse,
   createNoteInputSchema,
   listNotesQuerySchema,
   type NotesPage,
   noteIdSchema,
+  noteTitleKey,
   updateNoteInputSchema,
 } from '@cairn/core';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
-import { type Db, type Filter, ObjectId } from 'mongodb';
+import { type Collection, type Db, type Filter, type MongoClient, ObjectId } from 'mongodb';
 import { z } from 'zod';
 import type { Auth } from '../auth/auth';
-import { createRequireUser } from '../auth/require-user';
+import { protectRoutes } from '../auth/require-user';
+import { httpError } from '../lib/http-error';
+import { isDuplicateKeyError } from '../lib/mongo-errors';
 import { decodeCursor, encodeCursor } from './cursor';
-import { type NoteDoc, notesCollection, toNote, toNoteSummary } from './model';
+import { renameLinks, resolveLinks } from './links';
+import {
+  derivedFields,
+  type NoteDoc,
+  notesCollection,
+  SUMMARY_PROJECTION,
+  toNote,
+  toNoteSummary,
+} from './model';
 
 const paramsSchema = z.object({ id: noteIdSchema });
+
+const BACKLINKS_MAX = 100;
+const UNTITLED = 'Untitled';
 
 // 404 (not 403) for notes owned by someone else, so ids can't be probed for existence.
 const notFound = (reply: FastifyReply) =>
   reply.status(404).send({ error: 'NotFound', message: 'Note not found' });
 
-export const noteRoutes: FastifyPluginAsync<{ db: Db; auth: Auth }> = async (app, { db, auth }) => {
-  const notes = notesCollection(db);
+const titleTaken = (title: string) => httpError(409, `You already have a note called "${title}"`);
 
-  app.decorateRequest('userId', '');
-  app.addHook('preHandler', createRequireUser(auth));
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const noteRoutes: FastifyPluginAsync<{ db: Db; client: MongoClient; auth: Auth }> = async (
+  app,
+  { db, client, auth },
+) => {
+  const notes = notesCollection(db);
+  protectRoutes(app, auth);
+
+  const send = async (doc: NoteDoc) =>
+    toNote(doc, await resolveLinks(notes, doc.userId, doc.markdown));
 
   app.get('/', async (request): Promise<NotesPage> => {
-    const { limit, cursor } = listNotesQuerySchema.parse(request.query);
+    const { limit, cursor, tag } = listNotesQuerySchema.parse(request.query);
 
     const filter: Filter<NoteDoc> = { userId: request.userId };
+    if (tag) {
+      // The tag itself, or one nested under it: `project` matches `project/cairn`.
+      filter.tags = { $in: [tag, new RegExp(`^${escapeRegExp(tag)}/`)] };
+    }
     if (cursor) {
       const after = decodeCursor(cursor);
       filter.$or = [
@@ -39,7 +66,7 @@ export const noteRoutes: FastifyPluginAsync<{ db: Db; auth: Auth }> = async (app
 
     // Fetch one extra to know whether another page exists, without a separate count query.
     const docs = await notes
-      .find(filter, { projection: { markdown: 0, frontmatter: 0 } })
+      .find(filter, { projection: SUMMARY_PROJECTION })
       .sort({ updatedAt: -1, _id: -1 })
       .limit(limit + 1)
       .toArray();
@@ -55,36 +82,101 @@ export const noteRoutes: FastifyPluginAsync<{ db: Db; auth: Auth }> = async (app
   app.get('/:id', async (request, reply) => {
     const { id } = paramsSchema.parse(request.params);
     const doc = await notes.findOne({ _id: new ObjectId(id), userId: request.userId });
-    return doc ? toNote(doc) : notFound(reply);
+    return doc ? send(doc) : notFound(reply);
+  });
+
+  app.get('/:id/backlinks', async (request, reply) => {
+    const { id } = paramsSchema.parse(request.params);
+    const _id = new ObjectId(id);
+    const { userId } = request;
+    const note = await notes.findOne({ _id, userId }, { projection: { titleKey: 1 } });
+    if (!note) return notFound(reply);
+
+    const docs = await notes
+      .find({ userId, links: note.titleKey, _id: { $ne: _id } }, { projection: SUMMARY_PROJECTION })
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(BACKLINKS_MAX)
+      .toArray();
+    return { items: docs.map(toNoteSummary) } satisfies BacklinksResponse;
   });
 
   app.post('/', async (request, reply) => {
     const input = createNoteInputSchema.parse(request.body ?? {});
+    const { userId } = request;
     const now = new Date();
-    const doc: NoteDoc = {
-      _id: new ObjectId(),
-      userId: request.userId,
-      title: input.title,
-      markdown: input.markdown,
-      tags: [],
-      frontmatter: {},
-      createdAt: now,
-      updatedAt: now,
-    };
-    await notes.insertOne(doc);
-    return reply.status(201).send(toNote(doc));
+
+    // Two requests can pick the same "Untitled N" at once. The unique index stops the second,
+    // and it tries again with the next free number.
+    for (let attempt = 1; ; attempt++) {
+      const title = input.title ?? (await nextUntitledTitle(notes, userId));
+      const doc: NoteDoc = {
+        _id: new ObjectId(),
+        userId,
+        title,
+        titleKey: noteTitleKey(title),
+        markdown: input.markdown,
+        ...derivedFields(input.markdown),
+        createdAt: now,
+        updatedAt: now,
+      };
+      try {
+        await notes.insertOne(doc);
+        return reply.status(201).send(await send(doc));
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) throw error;
+        if (input.title !== undefined || attempt === 3) throw titleTaken(title);
+      }
+    }
   });
 
   app.patch('/:id', async (request, reply) => {
     const { id } = paramsSchema.parse(request.params);
     const input = updateNoteInputSchema.parse(request.body);
-    // Last write wins. Fine for one person editing; real-time collaboration comes with Yjs.
-    const doc = await notes.findOneAndUpdate(
-      { _id: new ObjectId(id), userId: request.userId },
-      { $set: { ...input, updatedAt: new Date() } },
-      { returnDocument: 'after' },
-    );
-    return doc ? toNote(doc) : notFound(reply);
+    const _id = new ObjectId(id);
+    const { userId } = request;
+
+    // A transaction, so a rename and the link rewrites it causes land together or not at all.
+    // Last write wins otherwise. Fine for one person editing; real-time collaboration comes with Yjs.
+    const doc = await client
+      .withSession((session) =>
+        session.withTransaction(async () => {
+          const current = await notes.findOne({ _id, userId }, { session });
+          if (!current) return null;
+
+          const title = input.title ?? current.title;
+          const markdown = input.markdown ?? current.markdown;
+          const now = new Date();
+          const updated = await notes.findOneAndUpdate(
+            { _id, userId },
+            {
+              $set: {
+                title,
+                titleKey: noteTitleKey(title),
+                markdown,
+                ...derivedFields(markdown),
+                updatedAt: now,
+              },
+            },
+            { session, returnDocument: 'after' },
+          );
+          if (updated && updated.titleKey !== current.titleKey) {
+            await renameLinks(notes, {
+              userId,
+              noteId: _id,
+              from: current.title,
+              to: title,
+              now,
+              session,
+            });
+          }
+          return updated;
+        }),
+      )
+      .catch((error: unknown) => {
+        throw isDuplicateKeyError(error) ? titleTaken(input.title ?? '') : error;
+      });
+
+    return doc ? send(doc) : notFound(reply);
   });
 
   app.delete('/:id', async (request, reply) => {
@@ -96,3 +188,14 @@ export const noteRoutes: FastifyPluginAsync<{ db: Db; auth: Auth }> = async (app
     return deletedCount ? reply.status(204).send() : notFound(reply);
   });
 };
+
+/** "Untitled", then "Untitled 1", "Untitled 2", ...: the lowest number not in use, like Obsidian. */
+async function nextUntitledTitle(notes: Collection<NoteDoc>, userId: string): Promise<string> {
+  const taken = await notes
+    .find({ userId, titleKey: /^untitled( \d+)?$/ }, { projection: { titleKey: 1 } })
+    .toArray();
+  const used = new Set(taken.map((doc) => Number(doc.titleKey.slice(UNTITLED.length)) || 0));
+  let n = 0;
+  while (used.has(n)) n++;
+  return n === 0 ? UNTITLED : `${UNTITLED} ${n}`;
+}

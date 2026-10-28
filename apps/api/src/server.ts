@@ -6,7 +6,7 @@ import { loadEnv } from './env';
 const env = loadEnv();
 const { client, db } = await connectDb(env.MONGODB_URI);
 const auth = createAuth(env, db, client);
-const app = await buildApp({ env, db, auth });
+const app = await buildApp({ env, db, client, auth });
 
 await app.listen({ host: env.HOST, port: env.PORT });
 

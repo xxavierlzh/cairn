@@ -5,7 +5,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Phase 2: Auth, notes CRUD and Markdown editor
+### Phase 3: Wikilinks, backlinks, tags and Obsidian vault export
+
+#### Added
+
+- `@cairn/core`: a parser for `[[wikilinks]]` (headings, block refs, aliases, embeds, `\|` in tables), `#tags` and YAML frontmatter. It skips code blocks and inline code, like Obsidian. Also `rewriteLinks` for renames, and `toPreviewMarkdown`, which turns links and tags into links any Markdown renderer can show.
+- `@cairn/export` (new): streams notes into a `.zip` of `<title>.md` files with fflate. Each note's Markdown is kept byte for byte, and its modified time is when the note was last edited.
+- `apps/api`:
+  - Every save stores the note's tags and the titles it links to. Notes come back with their outgoing links resolved to note ids.
+  - New routes: `GET /api/notes/:id/backlinks`, `GET /api/tags`, `GET /api/notes?tag=` (which also matches nested tags) and `GET /api/export`.
+  - Export streams the zip as the client reads it, and is limited to 5 a minute.
+- Web and mobile:
+  - Clickable wikilinks in the preview. Links to missing notes are dimmed, and opening one creates the note.
+  - `#tags` in the preview open the notes list filtered by that tag.
+  - Backlinks under the preview, tag chips on the notes list, and an export button. Mobile shares the zip through the share sheet (`expo-file-system` + `expo-sharing`, both in Expo Go).
+
+#### Changed
+
+- Titles are unique per user, ignoring case, so links and exported filenames are never ambiguous. A taken title returns `409`, and the editor keeps saving the body while it shows the error.
+- New notes are titled `Untitled`, `Untitled 1`, ..., using the lowest free number, like Obsidian.
+- Renaming a note rewrites links to it in your other notes, in the same transaction as the rename.
+- Titles that start or end with a dot, or that Windows reserves (`CON`, `NUL`, `COM1`, ...), are rejected.
+- On startup, the API backfills tags, links and title keys for older notes and renumbers duplicate titles. It does nothing once every note has been backfilled.
+- The editor waits for fresh data before you can edit. Otherwise a cached copy could undo links that a rename had just rewritten.
+- External links in the web preview open in a new tab.
+
+## Phase 2: Auth, notes CRUD and Markdown editor (merged in #2)
 
 #### Added
 

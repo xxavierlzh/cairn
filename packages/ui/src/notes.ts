@@ -1,6 +1,13 @@
 'use client';
 
-import { ApiError, type CreateNoteInput, noteTitleSchema, type UpdateNoteInput } from '@cairn/core';
+import {
+  ApiError,
+  type CreateNoteInput,
+  type Note,
+  noteTitleKey,
+  noteTitleSchema,
+  type UpdateNoteInput,
+} from '@cairn/core';
 import {
   QueryClient,
   useInfiniteQuery,
@@ -8,14 +15,26 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from './api-context';
 
 export const noteKeys = {
   all: ['notes'] as const,
   lists: () => [...noteKeys.all, 'list'] as const,
-  detail: (id: string) => [...noteKeys.all, 'detail', id] as const,
+  list: (tag: string | undefined) => [...noteKeys.lists(), { tag: tag ?? null }] as const,
+  details: () => [...noteKeys.all, 'detail'] as const,
+  detail: (id: string) => [...noteKeys.details(), id] as const,
+  backlinks: (id?: string) => [...noteKeys.all, 'backlinks', ...(id ? [id] : [])] as const,
+  tags: () => [...noteKeys.all, 'tags'] as const,
 };
+
+/** After any note changes: lists and tag counts may be out of date. */
+function invalidateAfterSave(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: noteKeys.lists() });
+  void queryClient.invalidateQueries({ queryKey: noteKeys.tags() });
+  // Other notes' backlinks may have changed too. Refetch them when they're next shown.
+  void queryClient.invalidateQueries({ queryKey: noteKeys.backlinks(), refetchType: 'none' });
+}
 
 export function createQueryClient() {
   return new QueryClient({
@@ -30,17 +49,29 @@ export function createQueryClient() {
   });
 }
 
-/** All of the user's notes, newest first, loaded a page at a time. */
-export function useNotesList() {
+/** The user's notes, newest first, loaded a page at a time. Pass a tag to filter by it. */
+export function useNotesList(tag?: string) {
   const api = useApi();
   const query = useInfiniteQuery({
-    queryKey: noteKeys.lists(),
-    queryFn: ({ pageParam }) => api.notes.list({ cursor: pageParam }),
+    queryKey: noteKeys.list(tag),
+    queryFn: ({ pageParam }) => api.notes.list({ cursor: pageParam, tag }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
   const notes = query.data?.pages.flatMap((page) => page.items) ?? [];
   return { ...query, notes };
+}
+
+/** Every tag in use, most used first. */
+export function useTags() {
+  const api = useApi();
+  return useQuery({ queryKey: noteKeys.tags(), queryFn: () => api.tags.list() });
+}
+
+/** Notes that link to this one. */
+export function useBacklinks(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: noteKeys.backlinks(id), queryFn: () => api.notes.backlinks(id) });
 }
 
 export function useCreateNote() {
@@ -50,9 +81,29 @@ export function useCreateNote() {
     mutationFn: (input?: CreateNoteInput) => api.notes.create(input),
     onSuccess: (note) => {
       queryClient.setQueryData(noteKeys.detail(note.id), note);
-      void queryClient.invalidateQueries({ queryKey: noteKeys.lists() });
+      invalidateAfterSave(queryClient);
     },
   });
+}
+
+/**
+ * Following a [[link]], as in Obsidian: opens the note, or creates it first if no note has
+ * that title yet. `resolve` comes from `useNoteEditor`; `open` navigates to a note id.
+ */
+export function useFollowLink(
+  resolve: (title: string) => string | null,
+  open: (id: string) => void,
+) {
+  const createNote = useCreateNote();
+  return {
+    follow(title: string) {
+      const id = resolve(title);
+      if (id) open(id);
+      else createNote.mutate({ title }, { onSuccess: (note) => open(note.id) });
+    },
+    isCreating: createNote.isPending,
+    error: createNote.error,
+  };
 }
 
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
@@ -82,22 +133,34 @@ export function useNoteEditor(id: string) {
 
   const [draft, setDraft] = useState<NoteDraft | null>(null);
   const [status, setStatus] = useState<SaveStatus>('saved');
+  /** A title the server said another note already has. Until it changes, only the body saves. */
+  const [takenTitle, setTakenTitle] = useState<string | null>(null);
   /** The latest edit that hasn't been sent yet. */
   const pending = useRef<UpdateNoteInput | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Copy the server version into the editable draft the first time it arrives.
-  if (draft === null && query.data) {
+  // Copy the server version into the editable draft once it's up to date. A cached copy can
+  // be stale (renaming another note may have rewritten links in this one), and saving edits
+  // made on top of it would undo that.
+  if (draft === null && query.data && !query.isFetching) {
     setDraft({ title: query.data.title, markdown: query.data.markdown });
   }
+
+  const isTaken = (title: string) =>
+    takenTitle !== null && noteTitleKey(title) === noteTitleKey(takenTitle);
 
   const { mutate: save } = useMutation({
     // Mutations with the same scope run one at a time, so saves reach the server in order.
     scope: { id: `note-${id}` },
     mutationFn: (input: UpdateNoteInput) => api.notes.update(id, input),
     onSuccess: (note) => {
+      const before = queryClient.getQueryData<Note>(noteKeys.detail(id));
       queryClient.setQueryData(noteKeys.detail(id), note);
-      void queryClient.invalidateQueries({ queryKey: noteKeys.lists() });
+      invalidateAfterSave(queryClient);
+      // A rename rewrites links in other notes, so cached copies of them are now out of date.
+      if (before && before.title !== note.title) {
+        void queryClient.invalidateQueries({ queryKey: noteKeys.details(), refetchType: 'none' });
+      }
     },
   });
 
@@ -111,7 +174,14 @@ export function useNoteEditor(id: string) {
       onSuccess: () => {
         if (!pending.current) setStatus('saved');
       },
-      onError: () => {
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 409 && input.title !== undefined) {
+          // Title taken: show that next to the title, and save the body without it.
+          setTakenTitle(input.title);
+          if (input.markdown !== undefined) pending.current ??= { markdown: input.markdown };
+          flush();
+          return;
+        }
         pending.current ??= input;
         setStatus('error');
       },
@@ -122,14 +192,23 @@ export function useNoteEditor(id: string) {
     if (!draft) return;
     const next = { ...draft, ...patch };
     setDraft(next);
-    // If the title is invalid (say, empty while retyping it), keep saving the body anyway.
-    pending.current = noteTitleSchema.safeParse(next.title).success
-      ? next
-      : { markdown: next.markdown };
+    // If the title can't be saved (empty while retyping it, or taken), save the body anyway.
+    const titleOk = noteTitleSchema.safeParse(next.title).success && !isTaken(next.title);
+    pending.current = titleOk ? next : { markdown: next.markdown };
     setStatus('unsaved');
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, AUTOSAVE_DELAY_MS);
   }
+
+  // Note ids by title key, for the links in the last saved version of this note.
+  const savedLinks = query.data?.links;
+  const linkIds = useMemo(() => {
+    const ids = new Map<string, string>();
+    for (const link of savedLinks ?? []) {
+      if (link.noteId) ids.set(noteTitleKey(link.target), link.noteId);
+    }
+    return ids;
+  }, [savedLinks]);
 
   // Leaving the screen mid-debounce would drop the last edit, so send it now.
   useEffect(
@@ -142,18 +221,26 @@ export function useNoteEditor(id: string) {
 
   const remove = useMutation({
     mutationFn: () => api.notes.remove(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: noteKeys.lists() }),
+    onSuccess: () => invalidateAfterSave(queryClient),
   });
 
   const titleCheck = draft ? noteTitleSchema.safeParse(draft.title) : null;
+  const titleError =
+    titleCheck?.success === false
+      ? titleCheck.error.issues[0]?.message
+      : draft && isTaken(draft.title)
+        ? `You already have a note called "${draft.title.trim()}"`
+        : undefined;
 
   return {
     note: query.data,
-    isLoading: query.isPending,
+    isLoading: draft === null && !query.error,
     error: query.error,
     draft,
     status,
-    titleError: titleCheck?.success === false ? titleCheck.error.issues[0]?.message : undefined,
+    titleError,
+    /** The id of the note a [[link]] points to, or `null` if it doesn't exist (yet). */
+    resolveLink: (title: string) => linkIds.get(noteTitleKey(title)) ?? null,
     setTitle: (title: string) => edit({ title }),
     setMarkdown: (markdown: string) => edit({ markdown }),
     deleteNote: async () => {

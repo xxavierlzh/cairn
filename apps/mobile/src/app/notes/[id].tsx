@@ -1,8 +1,8 @@
 import { ApiError } from '@cairn/core';
-import { Button, SAVE_STATUS_LABEL, useNoteEditor } from '@cairn/ui';
+import { Backlinks, Button, SAVE_STATUS_LABEL, useFollowLink, useNoteEditor } from '@cairn/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,6 +30,16 @@ function NoteEditorScreen({ id }: { id: string }) {
   const headerHeight = useHeaderHeight();
   const editor = useNoteEditor(id);
   const [mode, setMode] = useState<(typeof MODES)[number]>('write');
+  // Following a link pushes the next note on top, so Back retraces your steps.
+  const openNote = useCallback(
+    (noteId: string) => router.push({ pathname: '/notes/[id]', params: { id: noteId } }),
+    [router],
+  );
+  const { follow, error: followError } = useFollowLink(editor.resolveLink, openNote);
+  const showTag = useCallback(
+    (tag: string) => router.dismissTo({ pathname: '/', params: { tag } }),
+    [router],
+  );
 
   function confirmDelete() {
     Alert.alert('Delete this note?', "This can't be undone.", [
@@ -128,7 +138,24 @@ function NoteEditorScreen({ id }: { id: string }) {
           className="flex-1 px-4 pb-4 text-base text-stone-900"
         />
       ) : (
-        <MarkdownPreview markdown={editor.draft.markdown} />
+        <>
+          {followError ? (
+            <Text className="px-4 pb-2 text-sm text-red-600">
+              Couldn't create that note: {followError.message}
+            </Text>
+          ) : null}
+          <MarkdownPreview
+            markdown={editor.draft.markdown}
+            resolveLink={editor.resolveLink}
+            onPressLink={follow}
+            onPressTag={showTag}
+            footer={
+              <View className="pt-8">
+                <Backlinks noteId={id} onPressNote={openNote} />
+              </View>
+            }
+          />
+        </>
       )}
     </KeyboardAvoidingView>
   );

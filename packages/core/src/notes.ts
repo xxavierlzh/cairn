@@ -9,6 +9,14 @@ export const NOTES_PAGE_SIZE_MAX = 100;
 // ^ block ref, | alias, [ ] brackets).
 const FORBIDDEN_TITLE_CHARS = /[\\/:*?"<>|#^[\]]/;
 
+/**
+ * What makes two titles "the same note": [[wikilinks]] ignore case, and so do the Windows
+ * and macOS filesystems a vault gets exported to. NFC makes é typed two ways compare equal.
+ */
+export function noteTitleKey(title: string): string {
+  return title.trim().normalize('NFC').toLowerCase();
+}
+
 /** A MongoDB ObjectId as a 24-character hex string. */
 export const noteIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid note id');
 

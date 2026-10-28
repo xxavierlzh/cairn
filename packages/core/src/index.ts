@@ -4,4 +4,5 @@ export const TAGLINE = 'Notes that remember their sources.';
 
 export * from './api-client';
 export * from './format';
+export * from './markdown';
 export * from './notes';

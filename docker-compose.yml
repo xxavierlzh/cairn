@@ -1,0 +1,19 @@
+# Local MongoDB for development:  docker compose up -d
+#
+# mongodb-atlas-local is a one-node replica set with Atlas Search and Vector Search built in,
+# so it behaves like Atlas: transactions work now, and vector search will work in Phase 4.
+# Connection string: mongodb://localhost:27017/cairn?directConnection=true
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.0
+    hostname: mongodb
+    ports:
+      # 127.0.0.1 only: there's no password, so don't expose it to the rest of the network.
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+
+volumes:
+  mongo-data:
+  mongo-config:

@@ -1,0 +1,4 @@
+{
+  "extends": "@cairn/typescript-config/node.json",
+  "include": ["src", "test", "vitest.config.ts"]
+}

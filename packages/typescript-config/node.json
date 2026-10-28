@@ -2,8 +2,11 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "./base.json",
   "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    // The API runs through tsx, which resolves imports like a bundler. That lets us import
+    // workspace packages that ship raw TypeScript with extensionless paths (e.g. @cairn/core).
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
     "types": ["node"]
   }
 }

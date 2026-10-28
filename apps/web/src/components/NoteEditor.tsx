@@ -1,7 +1,7 @@
 'use client';
 
 import { ApiError } from '@cairn/core';
-import { SAVE_STATUS_LABEL, useNoteEditor } from '@cairn/ui';
+import { Backlinks, SAVE_STATUS_LABEL, useFollowLink, useNoteEditor } from '@cairn/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useState } from 'react';
@@ -14,6 +14,8 @@ const LAYOUTS: Layout[] = ['write', 'split', 'preview'];
 export function NoteEditor({ id }: { id: string }) {
   const router = useRouter();
   const editor = useNoteEditor(id);
+  const openNote = (noteId: string) => router.push(`/notes/${noteId}`);
+  const followLink = useFollowLink(editor.resolveLink, openNote);
   const [layout, setLayout] = useState<Layout>('split');
   // Re-rendering the preview on every keystroke can lag on long notes. A deferred value lets
   // React keep typing responsive and catch the preview up in the background.
@@ -102,7 +104,19 @@ export function NoteEditor({ id }: { id: string }) {
           <div
             className={`min-h-0 overflow-auto px-6 py-4 ${layout === 'split' ? 'w-1/2' : 'w-full'}`}
           >
-            <MarkdownPreview markdown={previewMarkdown} />
+            {followLink.error && (
+              <p className="mb-3 text-sm text-red-600">
+                Couldn't create that note: {followLink.error.message}
+              </p>
+            )}
+            <MarkdownPreview
+              markdown={previewMarkdown}
+              resolveLink={editor.resolveLink}
+              onCreateNote={followLink.follow}
+            />
+            <div className="mt-10">
+              <Backlinks noteId={id} onPressNote={openNote} />
+            </div>
           </div>
         )}
       </div>

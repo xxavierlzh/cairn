@@ -13,6 +13,7 @@
     "@better-auth/expo": "catalog:",
     "@better-auth/mongo-adapter": "1.7.12",
     "@cairn/core": "workspace:*",
+    "@cairn/export": "workspace:*",
     "@fastify/helmet": "^13.2.0",
     "@fastify/rate-limit": "^11.2.1",
     "better-auth": "catalog:",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@cairn/typescript-config": "workspace:*",
     "@types/node": "catalog:",
+    "fflate": "^0.8.3",
     "mongodb-memory-server": "^11.3.0",
     "typescript": "catalog:",
     "vite": "catalog:",

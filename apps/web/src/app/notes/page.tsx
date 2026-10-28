@@ -1,12 +1,25 @@
 'use client';
 
-import { Button, NoteList, useCreateNote, useNotesList } from '@cairn/ui';
-import { useRouter } from 'next/navigation';
+import { Button, NoteList, TagBar, useCreateNote, useNotesList, useTags } from '@cairn/ui';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
 export default function NotesPage() {
+  // useSearchParams needs a Suspense boundary, or Next.js can't prerender the page.
+  return (
+    <Suspense fallback={<p className="px-4 py-4 text-stone-500">Loading…</p>}>
+      <NotesIndex />
+    </Suspense>
+  );
+}
+
+function NotesIndex() {
   const router = useRouter();
+  // The tag filter lives in the URL (/notes?tag=todo), so it survives reloads and #tag links.
+  const tag = useSearchParams().get('tag')?.toLowerCase() || undefined;
   const { notes, isPending, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useNotesList();
+    useNotesList(tag);
+  const tags = useTags();
   const createNote = useCreateNote();
 
   function newNote() {
@@ -23,6 +36,14 @@ export default function NotesPage() {
         <p className="px-4 pb-2 text-sm text-red-600">{createNote.error.message}</p>
       )}
 
+      <TagBar
+        tags={tags.data?.tags ?? []}
+        selected={tag}
+        onSelect={(next) =>
+          router.replace(next ? `/notes?tag=${encodeURIComponent(next)}` : '/notes')
+        }
+      />
+
       {isPending ? (
         <p className="px-4 text-stone-500">Loading…</p>
       ) : error ? (
@@ -31,6 +52,7 @@ export default function NotesPage() {
         <div className="flex min-h-0 flex-1 flex-col">
           <NoteList
             notes={notes}
+            tag={tag}
             onPressNote={(id) => router.push(`/notes/${id}`)}
             onEndReached={() => {
               if (hasNextPage && !isFetchingNextPage) void fetchNextPage();

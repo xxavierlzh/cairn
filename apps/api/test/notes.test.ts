@@ -1,84 +1,33 @@
 import type { Note, NotesPage } from '@cairn/core';
-import type { FastifyInstance } from 'fastify';
-import { MongoClient } from 'mongodb';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app';
-import { createAuth } from '../src/auth/auth';
-import { ensureIndexes } from '../src/db';
-import { envSchema } from '../src/env';
+import { startTestApp, type TestApp, type UserApi } from './helpers';
 
-const WEB_ORIGIN = 'http://localhost:3000';
-
-let mongo: MongoMemoryReplSet;
-let client: MongoClient;
-let app: FastifyInstance;
+let server: TestApp;
 
 beforeAll(async () => {
-  // A one-node replica set, like Atlas, so Better Auth's transactions work.
-  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  client = new MongoClient(mongo.getUri('cairn-test'));
-  await client.connect();
-  const db = client.db();
-  await ensureIndexes(db);
-
-  const env = envSchema.parse({
-    NODE_ENV: 'test',
-    MONGODB_URI: mongo.getUri('cairn-test'),
-    BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long',
-    BETTER_AUTH_URL: 'http://localhost:4000',
-    WEB_ORIGIN,
-  });
-  app = await buildApp({ env, db, auth: createAuth(env, db, client) });
+  server = await startTestApp();
 });
 
 afterAll(async () => {
-  await app?.close();
-  await client?.close();
-  await mongo?.stop();
+  await server?.stop();
 });
 
-/** Signs up a fresh user and returns a Cookie header carrying their session. */
-async function signUp(email: string): Promise<string> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/sign-up/email',
-    headers: { origin: WEB_ORIGIN },
-    payload: { email, password: 'correct-horse-battery-staple', name: 'Test User' },
-  });
-  expect(res.statusCode, res.body).toBe(200);
-  const setCookie = [res.headers['set-cookie'] ?? []].flat();
-  return setCookie.map((c) => c.split(';')[0]).join('; ');
-}
-
-function api(cookie: string) {
-  const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
-    app.inject({ method, url: `/api/notes${url}`, headers: { cookie }, payload });
-  return {
-    list: (query = '') => call('GET', query),
-    get: (id: string) => call('GET', `/${id}`),
-    create: (payload: object = {}) => call('POST', '', payload),
-    update: (id: string, payload: object) => call('PATCH', `/${id}`, payload),
-    remove: (id: string) => call('DELETE', `/${id}`),
-  };
-}
-
 describe('notes API', () => {
-  let alice: ReturnType<typeof api>;
-  let bob: ReturnType<typeof api>;
+  let alice: UserApi;
+  let bob: UserApi;
 
   beforeAll(async () => {
-    alice = api(await signUp('alice@example.com'));
-    bob = api(await signUp('bob@example.com'));
+    alice = await server.signUp('alice@example.com');
+    bob = await server.signUp('bob@example.com');
   });
 
   it('reports health without auth', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    const res = await server.app.inject({ method: 'GET', url: '/api/health' });
     expect(res.json()).toEqual({ ok: true });
   });
 
   it('rejects requests without a session', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/notes' });
+    const res = await server.app.inject({ method: 'GET', url: '/api/notes' });
     expect(res.statusCode).toBe(401);
   });
 
@@ -86,7 +35,7 @@ describe('notes API', () => {
     const created = await alice.create({ title: 'First note', markdown: '# Hello' });
     expect(created.statusCode).toBe(201);
     const note = created.json<Note>();
-    expect(note).toMatchObject({ title: 'First note', markdown: '# Hello', tags: [] });
+    expect(note).toMatchObject({ title: 'First note', markdown: '# Hello', tags: [], links: [] });
 
     expect((await alice.get(note.id)).json<Note>().markdown).toBe('# Hello');
 
@@ -101,19 +50,48 @@ describe('notes API', () => {
     expect((await alice.get(note.id)).statusCode).toBe(404);
   });
 
-  it('defaults the title and body of a new note', async () => {
-    const note = (await alice.create()).json<Note>();
-    expect(note).toMatchObject({ title: 'Untitled', markdown: '' });
-    await alice.remove(note.id);
+  it('numbers untitled notes like Obsidian: Untitled, Untitled 1, Untitled 2', async () => {
+    const notes = [];
+    for (let i = 0; i < 3; i++) notes.push((await alice.create()).json<Note>());
+    expect(notes.map((n) => n.title)).toEqual(['Untitled', 'Untitled 1', 'Untitled 2']);
+    expect(notes[0]?.markdown).toBe('');
+
+    // Deleting one frees its number for the next new note.
+    await alice.remove(notes[1]?.id ?? '');
+    const next = (await alice.create()).json<Note>();
+    expect(next.title).toBe('Untitled 1');
+
+    for (const note of [notes[0], notes[2], next]) await alice.remove(note?.id ?? '');
+  });
+
+  it('keeps titles unique per user, ignoring case', async () => {
+    const ideas = await alice.note('Ideas');
+    const other = await alice.note('Other');
+
+    const duplicate = await alice.create({ title: 'IDEAS' });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().message).toContain('IDEAS');
+
+    expect((await alice.update(other.id, { title: 'ideas' })).statusCode).toBe(409);
+    expect((await alice.get(other.id)).json<Note>().title).toBe('Other');
+
+    // Another user can have a note with the same title.
+    expect((await bob.create({ title: 'Ideas' })).statusCode).toBe(201);
+    // Changing only the case of your own title is fine.
+    expect((await alice.update(ideas.id, { title: 'IDEAS' })).json<Note>().title).toBe('IDEAS');
+
+    await alice.remove(ideas.id);
+    await alice.remove(other.id);
   });
 
   it("keeps each user's notes private", async () => {
-    const note = (await alice.create({ title: 'Secret' })).json<Note>();
+    const note = await alice.note('Secret');
 
     expect((await bob.get(note.id)).statusCode).toBe(404);
+    expect((await bob.backlinks(note.id)).statusCode).toBe(404);
     expect((await bob.update(note.id, { title: 'Hacked' })).statusCode).toBe(404);
     expect((await bob.remove(note.id)).statusCode).toBe(404);
-    expect((await bob.list()).json<NotesPage>().items).toEqual([]);
+    expect((await bob.list()).json<NotesPage>().items.map((n) => n.title)).not.toContain('Secret');
 
     expect((await alice.get(note.id)).json<Note>().title).toBe('Secret');
     await alice.remove(note.id);
@@ -139,12 +117,14 @@ describe('notes API', () => {
   it('leaves the Markdown body out of list results', async () => {
     const page = (await alice.list('?limit=1')).json<NotesPage>();
     expect(page.items[0]).not.toHaveProperty('markdown');
+    expect(page.items[0]).not.toHaveProperty('links');
   });
 
   it.each([
     ['a malformed id', () => alice.get('not-an-id')],
     ['an empty update', () => alice.update('6720f1a2b3c4d5e6f7a8b9c0', {})],
     ['a title Obsidian cannot use', () => alice.create({ title: 'C#/notes' })],
+    ['a title Windows cannot use', () => alice.create({ title: 'CON' })],
     ['a tampered cursor', () => alice.list('?cursor=garbage')],
   ])('returns 400 for %s', async (_label, request) => {
     const res = await request();

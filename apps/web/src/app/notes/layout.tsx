@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect } from 'react';
+import { api } from '@/lib/api';
 import { authClient } from '@/lib/auth-client';
 
 /** Everything under /notes needs a session. Signed-out visitors go to /sign-in. */
@@ -35,6 +36,15 @@ export default function NotesLayout({ children }: { children: ReactNode }) {
         </Link>
         <div className="flex items-center gap-3 text-sm text-stone-600">
           <span className="hidden sm:inline">{session.user.email}</span>
+          {/* A plain link: the browser sends the session cookie and saves the .zip itself. */}
+          <a
+            href={api.exportUrl}
+            download
+            title="Download all notes as an Obsidian vault (.zip)"
+            className="rounded-lg px-3 py-1.5 font-medium hover:bg-stone-100"
+          >
+            Export vault
+          </a>
           <button
             type="button"
             onClick={signOut}

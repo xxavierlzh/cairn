@@ -13,6 +13,8 @@ export interface NoteListProps {
   /** Pull-to-refresh (mobile only; ignored on web). */
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Set while the list is filtered by a tag, so the empty state says so. */
+  tag?: string;
 }
 
 export function NoteList({
@@ -22,6 +24,7 @@ export function NoteList({
   loadingMore = false,
   refreshing = false,
   onRefresh,
+  tag,
 }: NoteListProps) {
   return (
     <FlatList
@@ -33,14 +36,17 @@ export function NoteList({
       onEndReachedThreshold={0.5}
       refreshing={refreshing}
       onRefresh={onRefresh}
-      ListEmptyComponent={EmptyState}
+      ListEmptyComponent={<EmptyState tag={tag} />}
       ListFooterComponent={loadingMore ? <ActivityIndicator className="py-4" /> : undefined}
       contentContainerClassName="pb-8"
     />
   );
 }
 
+const ROW_TAGS_MAX = 3;
+
 function NoteRow({ note, onPress }: { note: NoteSummary; onPress: () => void }) {
+  const extraTags = note.tags.length - ROW_TAGS_MAX;
   return (
     <Pressable
       accessibilityRole="button"
@@ -50,7 +56,15 @@ function NoteRow({ note, onPress }: { note: NoteSummary; onPress: () => void }) 
       <Text numberOfLines={1} className="text-base font-semibold text-stone-900">
         {note.title}
       </Text>
-      <Text className="text-sm text-stone-500">Edited {formatRelativeTime(note.updatedAt)}</Text>
+      <Text numberOfLines={1} className="text-sm text-stone-500">
+        Edited {formatRelativeTime(note.updatedAt)}
+        {note.tags.slice(0, ROW_TAGS_MAX).map((tag) => (
+          <Text key={tag} className="text-moss-700">
+            {`  #${tag}`}
+          </Text>
+        ))}
+        {extraTags > 0 ? `  +${extraTags}` : null}
+      </Text>
     </Pressable>
   );
 }
@@ -59,12 +73,14 @@ function Separator() {
   return <View className="mx-4 h-px bg-stone-200" />;
 }
 
-function EmptyState() {
+function EmptyState({ tag }: { tag?: string }) {
   return (
     <View className="items-center gap-1 px-6 py-16">
-      <Text className="text-base font-semibold text-stone-800">No notes yet</Text>
+      <Text className="text-base font-semibold text-stone-800">
+        {tag ? `No notes tagged #${tag}` : 'No notes yet'}
+      </Text>
       <Text className="text-center text-sm text-stone-500">
-        Create your first note to get started.
+        {tag ? 'Pick another tag, or All.' : 'Create your first note to get started.'}
       </Text>
     </View>
   );

@@ -6,6 +6,7 @@ import { ZodError } from 'zod';
 import type { Auth } from './auth/auth';
 import { authRoutes } from './auth/routes';
 import type { Env } from './env';
+import { exportRoutes } from './export/routes';
 import { noteRoutes } from './notes/routes';
 import { tagRoutes } from './tags/routes';
 
@@ -53,6 +54,7 @@ export async function buildApp({ env, db, client, auth }: AppDeps) {
   await app.register(authRoutes, { auth });
   await app.register(noteRoutes, { db, client, auth, prefix: '/api/notes' });
   await app.register(tagRoutes, { db, auth, prefix: '/api/tags' });
+  await app.register(exportRoutes, { db, auth, prefix: '/api/export' });
 
   return app;
 }
